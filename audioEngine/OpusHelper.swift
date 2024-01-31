@@ -16,21 +16,21 @@ protocol OpusHelperType {
 
 class OpusHelper {
     var outputData: Data
-
-    init(outputData: Data = Data()) {
+    let opusEncoder: Opus.Encoder
+    
+    init(outputData: Data = Data(), recordingFormat: AVAudioFormat) {
         self.outputData = outputData
+        self.opusEncoder = try! Opus.Encoder(format: recordingFormat)
     }
     
-    func encode(_ buffer: AVAudioPCMBuffer, recordingFormat: AVAudioFormat, completion: ((Result<Data, Error>) -> Void)?) {
+    func encode(_ buffer: AVAudioPCMBuffer, recordingFormat: AVAudioFormat) -> Data? {
         do {
-            let opusEncoder = try Opus.Encoder(format: recordingFormat, application: .audio)
             let result = try opusEncoder.encode(buffer, to: &outputData)
-            try opusEncoder.reset()
             print("SSS result \(result)")
-            completion?(.success(outputData))
+            return outputData
         } catch let error {
             debugPrint("SSS \(error)")
-            completion?(.failure(error))
+            return nil
         }
     }
 }

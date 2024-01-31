@@ -40,7 +40,7 @@ final class AudioEngine {
     private let outputBus: AVAudioNodeBus = 0
     private let bufferSize: AVAudioFrameCount = 1024
     private var inputFormat: AVAudioFormat!
-    let opusHelper = OpusHelper()
+    private var opusHelper: OpusHelper?
 
     private (set) var status: EngineStatus = .notInitialized
     
@@ -128,7 +128,7 @@ final class AudioEngine {
         let settings: [String: Any] = [
             AVFormatIDKey: buffer.format.settings[AVFormatIDKey] ?? kAudioFormatLinearPCM,
             AVNumberOfChannelsKey: buffer.format.settings[AVNumberOfChannelsKey] ?? 1,
-            AVSampleRateKey: sampleRate,
+            AVSampleRateKey: buffer.format.settings[AVSampleRateKey] ?? sampleRate,
             AVLinearPCMBitDepthKey: buffer.format.settings[AVLinearPCMBitDepthKey] ?? 16
         ]
         
@@ -192,6 +192,9 @@ final class AudioEngine {
             return
         }
         
+        if opusHelper == nil {
+            opusHelper = OpusHelper(recordingFormat: outputFormat)
+        }
         guard let converter = AVAudioConverter(from: inputFormat, to: outputFormat) else {
             streamingData = false
             delegate?.audioEngineFailed(error: AudioEngineError.failedToCreateConverter)
@@ -220,18 +223,12 @@ final class AudioEngine {
                     delegate?.audioEngineStarted()
                 }
                 delegate?.audioEngineConverted(data: samples, time: time)
-                encodeBufferToOpus(buffer) { result in
-                    switch result {
-                    case .success(let data):
-                        // Handle the encoded Opus data, e.g., save to file, stream, etc.
-                        print("[AudioEngine]: Opus encoding succeeded, data size: \(data.count) bytes")
-                    case .failure(let error):
-                        self.delegate?.audioEngineFailed(error: error)
-                        self.status = .failed
-                        debugPrint("[AudioEngine]: Opus encoding failed, \(error)")
-                        return
-                    }
+                if let data = encodeBufferToOpus(convertedBuffer) {
+                    print("[AudioEngine]: Opus encoding succeeded, data size: \(data.count) bytes")
+                } else {
+                    print("[AudioEngine]: Opus encoding failed")
                 }
+
             case .error:
                 if let error = error {
                     streamingData = false
@@ -260,14 +257,12 @@ final class AudioEngine {
 }
 
 extension AudioEngine {
-    func encodeBufferToOpus(_ buffer: AVAudioPCMBuffer, completion: ((Result<Data, Error>) -> Void)?) {
-        guard let recordingFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: sampleRate, channels: numberOfChannels, interleaved: false) else {
-            completion?(.failure(AudioEngineError.invalidFormat))
-            return
+    func encodeBufferToOpus(_ buffer: AVAudioPCMBuffer) -> Data? {
+        guard let recordingFormat = AVAudioFormat(commonFormat: self.converterFormat, sampleRate: sampleRate, channels: numberOfChannels, interleaved: false) else {
+            
+            return nil
         }
-        
-        opusHelper.encode(buffer, recordingFormat: recordingFormat) { result in
-            completion?(result)
-        }
+
+        return opusHelper?.encode(buffer, recordingFormat: recordingFormat)
     }
 }
